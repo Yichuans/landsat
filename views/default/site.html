@@ -1,0 +1,571 @@
+<!doctype html>
+<!--[if lt IE 9]>  <html class="ie lt-ie9 ie8"> <![endif]-->
+<!--[if IE 9]>     <html class="ie ie9"> <![endif]-->
+<!--[if !IE]><!-->
+<html>
+<!--<![endif]-->
+
+<head>
+    <meta charset="utf-8">
+    <meta content="IE=edge" http-equiv="X-UA-Compatible">
+    <meta name="viewport" content="width=device-width, user-scalable=no">
+    <title>Natural World Heritage Watch</title>
+    <link rel="shortcut icon" href="/img/favicon.ico">
+    <!-- get calcite-web css from the cdn (use latest version) -->
+    <link rel="stylesheet" href="https://s3-us-west-1.amazonaws.com/patterns.esri.com/files/calcite-web/1.0.0-beta.31/css/calcite-web.min.css">
+    <!--[if lt IE 9]>
+      <script src="/assets/javascripts/libs/selectivizr.js"></script>
+      <script src="/assets/javascripts/libs/html5shiv.js"></script>
+    <![endif]-->
+    <style>
+    body {
+        height: 100%;
+        width: 100%;
+    }
+    
+    .map-container {
+        width: 100%;
+        height: 100%;
+    }
+    
+    .map-wrap {}
+    
+    .map {
+        /*
+        padding: 0;
+        margin: 0;*/
+        height: 450px;
+        width: 100%;
+    }
+    </style>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.0/esri/css/main.css">
+    <script type="text/javascript">
+    dojoConfig = {
+        packages: [{
+            name: "calcite-maps",
+            location: "http://esri.github.com/calcite-maps/dist/js/dojo"
+        }, {
+            name: "calcite-web.min",
+            location: "https://s3-us-west-1.amazonaws.com/patterns.esri.com/files/calcite-web/1.0.0-beta.31/js"
+        }]
+    };
+    </script>
+    <script src="https://js.arcgis.com/4.0/"></script>
+    <!-- 
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/js/select2.min.js"></script> -->
+    <script>
+    require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/WebMap",
+        "esri/layers/FeatureLayer",
+        "esri/renderers/SimpleRenderer",
+        "esri/symbols/SimpleFillSymbol",
+
+        "esri/layers/ImageryLayer",
+        "esri/layers/support/MosaicRule",
+        "esri/layers/support/RasterFunction",
+        "esri/tasks/QueryTask",
+        "esri/tasks/support/Query",
+
+        "esri/core/watchUtils",
+        "esri/core/Scheduler",
+        "esri/widgets/BasemapToggle",
+
+        "dojo/dom", "dojo/dom-construct", "dojo/on",
+
+        "calcite-web.min/calcite-web",
+        // "calcite-maps/calcitemaps",
+        "dojo/domReady!"
+    ], function(Map, MapView, WebMap, FeatureLayer, SimpleRenderer, SimpleFillSymbol,
+        ImageryLayer, MosaicRule, RasterFunction, QueryTask, Query,
+        watchUtils, Scheduler, BasemapToggle,
+        dom, domConstruct, on,
+        calcite
+    ) {
+
+        // utility date
+        var DAY_MS = 86400000;
+        var current_time = new Date();
+        var past_thirty_days = new Date(current_time - 30 * DAY_MS);
+        var past_three_months = new Date(current_time - 90 * DAY_MS);
+        var past_three_years = new Date(current_time - 365 * 3 * DAY_MS)
+
+        linux_time_to_timestamp = function(date) {
+            return date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + ' 00:00:00'
+        };
+
+
+        // add date info dynamically
+        var infoDiv2 = dom.byId("infoDiv2");
+        var infoDiv3 = dom.byId("infoDiv3");
+        var infoDiv4 = dom.byId("infoDiv4");
+
+        domConstruct.create("h4", {
+            innerHTML: "past 30 days",
+        }, infoDiv2);
+        domConstruct.create("p", {
+            innerHTML: "Since: " + past_thirty_days.toDateString()
+        }, infoDiv2);
+
+        domConstruct.create("h4", {
+            innerHTML: "past three months",
+        }, infoDiv3);
+        domConstruct.create("p", {
+            innerHTML: past_three_months.toDateString() + " - " + past_thirty_days.toDateString()
+        }, infoDiv3);
+
+        domConstruct.create("h4", {
+            innerHTML: "past three years",
+        }, infoDiv4);
+        domConstruct.create("p", {
+            innerHTML: past_three_years.toDateString() + " - " + past_three_months.toDateString()
+        }, infoDiv4);
+
+
+
+        wdpaid = {{=wdpaid}};
+
+        calcite.init();
+
+        // init maps
+        var map = new Map({
+            basemap: "streets-vector"
+        });
+
+        // thematic maps
+        var map2 = new Map({
+            basemap: "gray-vector"
+        });
+        var map3 = new Map({
+            basemap: "gray-vector"
+        });
+        var map4 = new Map({
+            basemap: "gray-vector"
+        });
+
+
+        // mosaic - latest
+        var mr2 = new MosaicRule({
+            ascending: true,
+            method: 'attribute',
+            sortField: 'best',
+            operation: 'first',
+            where: "AcquisitionDate > timestamp '" + linux_time_to_timestamp(past_thirty_days) + "'",
+        });
+        // past three months
+        var mr3 = new MosaicRule({
+            ascending: true,
+            method: 'attribute',
+            sortField: 'best',
+            operation: 'first',
+            where: "(AcquisitionDate < timestamp '" + linux_time_to_timestamp(past_thirty_days) + "') AND (AcquisitionDate > timestamp '" + linux_time_to_timestamp(past_three_months) + "')",
+        });
+        // past three years 
+        var mr4 = new MosaicRule({
+            ascending: true,
+            method: 'attribute',
+            sortField: 'best',
+            operation: 'first',
+            where: "(AcquisitionDate < timestamp '" + linux_time_to_timestamp(past_three_months) + "') AND (AcquisitionDate > timestamp '" + linux_time_to_timestamp(past_three_years) + "')",
+        });
+
+
+        // rendering
+        rf1 = new RasterFunction({
+            functionName: "Natural Color with DRA",
+        });
+
+        rf2 = new RasterFunction({
+            functionName: "NDVI Colorized",
+        });
+
+        rf3 = new RasterFunction({
+            functionName: "Agriculture with DRA",
+        });
+
+        rf4 = new RasterFunction({
+            functionName: "Geology with DRA",
+        });
+
+
+        // image layers
+        var landsat_layer2 = new ImageryLayer({
+            url: "http://landsat2.arcgis.com/arcgis/rest/services/Landsat8_Views/ImageServer",
+            mosaicRule: mr2,
+            renderingRule: rf3,
+        })
+
+
+        var landsat_layer3 = new ImageryLayer({
+            url: "http://landsat2.arcgis.com/arcgis/rest/services/Landsat8_Views/ImageServer",
+            mosaicRule: mr3,
+            renderingRule: rf3,
+        })
+
+
+        var landsat_layer4 = new ImageryLayer({
+            url: "http://landsat2.arcgis.com/arcgis/rest/services/Landsat8_Views/ImageServer",
+            mosaicRule: mr4,
+            renderingRule: rf3,
+        })
+
+
+        change_lyr_render = function(renderer) {
+            landsat_layer2.renderingRule = renderer;
+            landsat_layer3.renderingRule = renderer;
+            landsat_layer4.renderingRule = renderer;
+        };
+
+
+
+        // wh rendering
+        var wh_render = new SimpleRenderer({
+            symbol: new SimpleFillSymbol({
+                color: [0, 100, 0, 0.05],
+                outline: {
+                    color: [0, 26, 0, 0.8],
+                    width: 1.5,
+                    style: "short-dash-dot",
+                }
+            })
+        });
+        // wh feature service 
+        var wh_layer = new FeatureLayer({
+            url: "http://services5.arcgis.com/Mj0hjvkNtV7NRhA7/arcgis/rest/services/Latest_WH/FeatureServer/0",
+            outFields: ["en_name", "fr_name", "country", "status_yr", "crit", "rep_area", "gis_area", "wdpaid"],
+            renderer: wh_render,
+            // ensure minimal load time
+            definitionExpression: "wdpaid = " + wdpaid,
+            popupTemplate: {
+                title: "{en_name}",
+                content: [{
+                    // This element uses an attribute from the featurelayer which displays a sentence
+                    //giving the total amount of trees value within a specified census block.
+                    type: "text",
+                    text: "<font><p><strong>French name:</strong> {fr_name}</p><p><strong>Country:</strong> {country}</p><p><strong>Inscription:</strong> {status_yr}</p><p><strong>Criteria:</strong> {crit} </p><p><strong>Report area:</strong> {rep_area} sqkm </p><p><strong>GIS area:</strong> {gis_area} sqkm </p><p><strong>WDPAID:</strong> {wdpaid} </p><hr /><p><a href='http://www.protectedplanet.net/{wdpaid}' target='_blank'>Protected Planet</a></p><p><a href='http://www.worldheritageoutlook.iucn.org/search-sites/-/wdpaid/en/{wdpaid}' target='_blank'>IUCN World Heritage Outlook</a></p></font>"
+                }],
+                fieldInfos: [{
+                    fieldName: "gis_area",
+                    format: {
+                        places: 2,
+                        digitSeperator: true
+                    }
+                }, {
+                    fieldName: "rep_area",
+                    format: {
+                        places: 2,
+                        digitSeperator: true
+                    }
+                }]
+            },
+            // visible: false
+        });
+
+        // ==================== add layers to map ===================
+        map.add(wh_layer);
+        map2.add(landsat_layer2);
+        map3.add(landsat_layer3);
+        map4.add(landsat_layer4);
+
+
+
+        // ================= create views ==========================
+        var view = new MapView({
+            container: "viewDiv1",
+            map: map,
+
+        });
+
+        // 1 - Create the widget
+        var toggle = new BasemapToggle({
+            // 2 - Set properties
+            view: view, // view that provides access to the map's 'topo' basemap
+            nextBasemap: "satellite" // allows for toggling to the 'hybrid' basemap
+        });
+
+        toggle.startup();
+        view.ui.add(toggle, "top-right");
+
+
+        var view2 = new MapView({
+            container: "viewDiv2",
+            map: map2,
+
+        });
+        var view3 = new MapView({
+            container: "viewDiv3",
+            map: map3,
+
+        });
+        var view4 = new MapView({
+            container: "viewDiv4",
+            map: map4,
+
+        });
+
+        // sync view: codes from esri sample 
+        var synchronizeView = function(view, others) {
+            others = Array.isArray(others) ? others : [others];
+
+            var viewpointWatchHandle;
+            var viewStationaryHandle;
+            var otherInteractHandlers;
+            var scheduleHandle;
+
+            var clear = function() {
+                if (otherInteractHandlers) {
+                    otherInteractHandlers.forEach(function(handle) {
+                        handle.remove();
+                    });
+                }
+                viewpointWatchHandle && viewpointWatchHandle.remove();
+                viewStationaryHandle && viewStationaryHandle.remove();
+                scheduleHandle && scheduleHandle.remove();
+                otherInteractHandlers = viewpointWatchHandle =
+                    viewStationaryHandle = scheduleHandle = null;
+            };
+
+            var interactWatcher = view.watch('interacting,animation',
+                function(newValue) {
+                    if (!newValue) {
+                        return;
+                    }
+                    if (viewpointWatchHandle || scheduleHandle) {
+                        return;
+                    }
+
+                    // start updating the other views at the next frame
+                    scheduleHandle = Scheduler.schedule(function() {
+                        scheduleHandle = null;
+                        viewpointWatchHandle = view.watch('viewpoint',
+                            function(newValue) {
+                                others.forEach(function(otherView) {
+                                    otherView.viewpoint = newValue;
+                                });
+                            });
+                    });
+
+                    // stop as soon as another view starts interacting, like if the user starts panning
+                    otherInteractHandlers = others.map(function(otherView) {
+                        return watchUtils.watch(otherView,
+                            'interacting,animation',
+                            function(value) {
+                                if (value) {
+                                    clear();
+                                }
+                            });
+                    });
+
+                    // or stop when the view is stationary again
+                    viewStationaryHandle = watchUtils.whenTrue(view,
+                        'stationary', clear);
+                });
+
+            return {
+                remove: function() {
+                    this.remove = function() {};
+                    clear();
+                    interactWatcher.remove();
+                }
+            }
+        };
+        /**
+         * utility method that synchronizes the viewpoints of multiple views
+         */
+        var synchronizeViews = function(views) {
+            var handles = views.map(function(view, idx, views) {
+                var others = views.concat();
+                others.splice(idx, 1);
+                return synchronizeView(view, others);
+            });
+
+            return {
+                remove: function() {
+                    this.remove = function() {};
+                    handles.forEach(function(h) {
+                        h.remove();
+                    });
+                    handles = null;
+                }
+            }
+        };
+
+        synchronizeViews([view, view2, view3, view4]);
+
+
+        // ==========================go to WH by WDPAID============================
+        view.then(function() {
+
+            var query = new Query({
+                where: "wdpaid = " + wdpaid,
+                outFields: ['wdpaid', 'en_name'],
+            });
+
+            var queryStatesTask = new QueryTask({
+                url: "http://services5.arcgis.com/Mj0hjvkNtV7NRhA7/arcgis/rest/services/Latest_WH/FeatureServer/0"
+            });
+
+
+            queryStatesTask.execute(query).then(function(data) {
+                // create wh name in the title
+                var wh_name = (data.features[0].attributes.en_name || null);
+                domConstruct.create("h2", {
+                    innerHTML: wh_name
+                }, dom.byId('title'));
+
+            });
+
+            queryStatesTask.executeForExtent(query).then(function(data) {
+                view.goTo(data.extent);
+            }, function(err) {
+                console.log(err)
+            });
+
+
+
+
+
+
+        })
+
+    });
+    </script>
+</head>
+
+<body>
+    <div class="wrapper">
+        <!-- header -->
+        <header class="top-nav fade-in">
+            <div class="grid-container">
+                <div class="column-24">
+                    <!-- desktop sized navigation -->
+                    <div class="tablet-hide">
+                        <!-- logo / home -->
+                        <a href="../index" class="top-nav-title"><span class="icon-ui-experimental"></span> Natural World Heritage Watch</a>
+                        <!-- primary navigation sections -->
+                        <!-- user specific dropdowns -->
+                        <!--                         <nav class="class-top-nav-list right" role="navigation" aria-labelledby="usernav">
+                            <span>Select a World Heritage site</span>
+                            <select id="wh-selector" class="modifier-class">
+                            </select>
+                        </nav> -->
+                    </div>
+                    <!-- tablet and mobile sized navigation -->
+                    <div class="tablet-show top-nav-flex">
+                        <!-- open primary navigation drawer -->
+                        <nav class="top-nav-flex-list" role="navigation" aria-labelledby="topnav">
+                            <a href="/" class="icon-ui-menu top-nav-link js-drawer-toggle" data-drawer="top-nav"><span class="phone-hide">Menu</span></a>
+                        </nav>
+                        <!-- logo / home -->
+                        <header class="top-nav-flex-title">
+                            <a href="/" class="top-nav-link">Natural World Heritage Watch</a>
+                        </header>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <!-- title and info -->
+        <div class="grid-container leader-1">
+            <div class="column-24">
+                <div id="title"></div>
+                <div class="panel panel-no-border leader-1">
+                    <ul>
+                        <li>All images are hosted at Amazon and powered by esri web services. They are updated daily.</li>
+                        <li>Since they are generated dynamically, it may take a while to load for some sites.</li>
+                        <li>Landsat images displayed below are selected based on quality, i.e., those with considerable cloud cover will show only when no better data is available.</li>
+                        <li>You may need to zoom in to an appropriate scale in order to trigger data loading. This seems to be an issue for images without overviews.</li>
+                        <li>You may choose a different visualisation to aid interpretation.<a class="js-modal-toggle btn btn-transparent inline-block" href="#" data-modal="viz-exp">What is a visualisation?</a></li>
+                    </ul>
+                </div>
+                <div class="leader-1 inline-block">
+                    <div class="dropdown js-dropdown">
+                        <!-- extends side-nav -->
+                        <button class="btn btn-clear dropdown-btn js-dropdown-toggle" tabindex="0" aria-haspopup="true" aria-expanded="false">Select visualisation</button>
+                        <!-- extends side-nav -->
+                        <nav class="dropdown-menu modifier-class" role="menu">
+                            <!-- extends side-nav-link -->
+                            <a href="#" class="dropdown-link" role="menu-item" onclick="change_lyr_render(rf1)">Natural color</a>
+                            <a href="#" class="dropdown-link" role="menu-item" onclick="change_lyr_render(rf2)">NDVI colorised</a>
+                            <a href="#" class="dropdown-link" role="menu-item" onclick="change_lyr_render(rf3)">Agriculture</a>
+                            <a href="#" class="dropdown-link" role="menu-item" onclick="change_lyr_render(rf4)">Geology</a>
+                        </nav>
+                    </div>
+                </div>
+                <div class="js-modal modal-overlay modifier-class" data-modal="viz-exp">
+                    <div class="modal-content column-18" role="dialog" aria-labelledby="modal" role="dialog">
+                        <a class="js-modal-toggle icon-ui-close icon-flush font-size-1 right" href="#" aria-label="close-modal"></a>
+                        <h3 class='trailer-half'>Landsat 8 band combination</h3>
+                        <ul>
+                            <li>Natural Color: Natural Color bands red, green, blue (4, 3, 2) displayed with dynamic range adjustement applied on apparent reflectance.</li>
+                            <li>NDVI colorised: Normalized difference vegetation index (NDVI) with color map. Dark green is thick vigorous vegetation and brown represents sparse vegetation.</li>
+                            <li>Agriculture: Bands shortwave IR-1, near-IR, blue (6, 5, 2) with dynamic range adjustement applied on apparent reflectance. Vigorous veg. is bright green, stressed veg. dull green and bare areas as brown.</li>
+                            <li>Geology: Bands shortwave IR-1, near-IR, blue (7, 6, 2) with dynamic range adjustement applied on apparent reflectance. Vigorous veg. is bright green, stressed veg. dull green and bare areas as brown.</li>
+                        </ul>
+                        <div class="text-right">
+                            <button class="btn-clear js-modal-toggle">return</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- maps and infobox-->
+        <div class="grid-container leader-1">
+            <div class="map-container column-24">
+                <div class="map-wrap column-6">
+                    <div class="map" id="viewDiv1"></div>
+                    <div class="info-bar leader-1" id="infoDiv1">
+                        <h4>boundary</h4>
+                    </div>
+                </div>
+                <div class="map-wrap column-6">
+                    <div class="map" id="viewDiv2"></div>
+                    <div class="info-bar leader-1" id="infoDiv2">
+                    </div>
+                </div>
+                <div class="map-wrap column-6">
+                    <div class="map" id="viewDiv3"></div>
+                    <div class="info-bar leader-1" id="infoDiv3">
+                    </div>
+                </div>
+                <div class="map-wrap column-6">
+                    <div class="map" id="viewDiv4"></div>
+                    <div class="info-bar leader-1" id="infoDiv4">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <footer class="footer leader-3">
+        <div class="grid-container">
+            <nav class="column-24">
+                <p>Prototype landsat 8 images for natural World Heritage sites</p>
+            </nav>
+            <div class="column-24">
+                <hr>
+                <div class="column-8">
+                    <p>IUCN World Heritage Programme</p>
+                </div>
+                <div class="column-16 font-size--2">
+                    <a class="link-off-black margin-right-4" href="#">World Heritage Outlook</a>
+                    <a class="link-off-black margin-right-4" href="#">Land cover change</a>
+                    <a class="link-off-black margin-right-4" href="#">Climate change vulnerability</a>
+                    <a class="link-off-black margin-right-4" href="#">Datasheet</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-61833965-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+
+</html>
